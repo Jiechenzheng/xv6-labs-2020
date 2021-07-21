@@ -1,0 +1,11 @@
+{
+    "files.associations": {
+        "proc.h": "c",
+        "syscall.h": "c",
+        "types.h": "c",
+        "riscv.h": "c",
+        "user.h": "c",
+        "stat.h": "c"
+    },
+    "window.zoomLevel": 1
+}
