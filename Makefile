@@ -178,7 +178,8 @@ ifeq ($(LAB),util)
 	UEXTRA += user/xargstest.sh
 UPROGS += \
 	$U/_sleep\
-	$U/_pingpong
+	$U/_pingpong\
+	$U/_primes
 endif
 
 fs.img: mkfs/mkfs README $(UEXTRA) $(UPROGS)
