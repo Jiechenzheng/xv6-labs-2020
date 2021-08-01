@@ -179,7 +179,8 @@ ifeq ($(LAB),util)
 UPROGS += \
 	$U/_sleep\
 	$U/_pingpong\
-	$U/_primes
+	$U/_primes\
+	$U/_find
 endif
 
 fs.img: mkfs/mkfs README $(UEXTRA) $(UPROGS)

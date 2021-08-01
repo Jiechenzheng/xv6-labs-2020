@@ -30,6 +30,7 @@ ls(char *path)
   struct dirent de;
   struct stat st;
 
+  printf("The path is: %s\n", path);
   if((fd = open(path, 0)) < 0){
     fprintf(2, "ls: cannot open %s\n", path);
     return;
@@ -57,7 +58,7 @@ ls(char *path)
     while(read(fd, &de, sizeof(de)) == sizeof(de)){
       if(de.inum == 0)
         continue;
-      memmove(p, de.name, DIRSIZ);
+      memmove(p, de.name, DIRSIZ);  // Copies the values of num bytes from the location pointed by source to the memory block pointed by destination.
       p[DIRSIZ] = 0;
       if(stat(buf, &st) < 0){
         printf("ls: cannot stat %s\n", buf);
