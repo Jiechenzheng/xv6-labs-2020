@@ -105,7 +105,7 @@ sys_trace(void)
   if(argint(0, &n) < 0)
     return -1;
 
-  // Todo: 用 | 去添加 tracenum
-  myproc()->tracenum = n;
+  // 用 | 去添加 tracenum, add all system call numbers to be traced
+  myproc()->tracenum = n | myproc()->tracenum;
   return 0;
 }
