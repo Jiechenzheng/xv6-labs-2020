@@ -9,16 +9,19 @@ main(int argc, char *argv[])
   int i;
   char *nargv[MAXARG];
 
+  // parse the trace argument. This is the invalid argument
   if(argc < 3 || (argv[1][0] < '0' || argv[1][0] > '9')){
     fprintf(2, "Usage: %s mask command\n", argv[0]);
     exit(1);
   }
 
+  // trace system call
   if (trace(atoi(argv[1])) < 0) {
     fprintf(2, "%s: trace failed\n", argv[0]);
     exit(1);
   }
   
+  // take and command line after `trace <integer>` and exec it
   for(i = 2; i < argc && i < MAXARG; i++){
     nargv[i-2] = argv[i];
   }
