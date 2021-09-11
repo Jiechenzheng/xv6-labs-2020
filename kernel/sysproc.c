@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -107,5 +108,25 @@ sys_trace(void)
 
   // 用 | 去添加 tracenum, add all system call numbers to be traced
   myproc()->tracenum = n | myproc()->tracenum;
+  return 0;
+}
+
+uint64
+sys_sysinfo(void)
+{
+  struct proc *p = myproc();
+  struct sysinfo sy; 
+  uint64 st; // user pointer to struct sysinfo
+
+  if(argaddr(0, &st) < 0)
+    return -1;
+  
+  sy.freemem = getfreemem();
+  sy.nproc = getprocnum();
+
+  if(copyout(p->pagetable, st, (char *)&sy, sizeof(sy)) < 0)
+    return -1;
+
+  // if this system call fails, return -1
   return 0;
 }

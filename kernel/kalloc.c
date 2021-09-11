@@ -8,6 +8,7 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+#include "proc.h"
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -79,4 +80,24 @@ kalloc(void)
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
+}
+
+// collect the amount of free memory
+uint64
+getfreemem(void)
+{
+  int sz0;
+  sz0 = myproc()->sz;
+  uint64 n = 0;
+
+  while (1)
+  {
+    if(growproc(PGSIZE) < 0){
+      break;
+    }
+    n += PGSIZE;
+  }
+  
+  growproc(-(myproc()->sz - sz0));
+  return n;
 }

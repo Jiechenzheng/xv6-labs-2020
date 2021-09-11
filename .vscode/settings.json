@@ -3,6 +3,8 @@
         "proc.h": "c",
         "types.h": "c",
         "defs.h": "c",
-        "syscall.h": "c"
+        "syscall.h": "c",
+        "stat.h": "c",
+        "sysinfo.h": "c"
     }
 }
