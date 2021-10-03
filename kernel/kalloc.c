@@ -86,18 +86,24 @@ kalloc(void)
 uint64
 getfreemem(void)
 {
-  int sz0;
-  sz0 = myproc()->sz;
+  struct run *r, *r0;
   uint64 n = 0;
 
-  while (1)
+  // kmem is a unique object to store the pointer to the last freelist
+  // acquire the locker to modify kmem object
+  acquire(&kmem.lock);
+  r = r0 = kmem.freelist;
+
+  while (r)
   {
-    if(growproc(PGSIZE) < 0){
-      break;
-    }
-    n += PGSIZE;
+    kmem.freelist = r->next;
+    r = kmem.freelist;
+    n += 4096;
   }
-  
-  growproc(-(myproc()->sz - sz0));
+
+  // set the value back of kmem.freelist
+  kmem.freelist = r0;
+  release(&kmem.lock);
+
   return n;
 }
