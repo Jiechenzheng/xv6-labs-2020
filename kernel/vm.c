@@ -432,3 +432,47 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+void
+vmprintpte(pte_t pte, int index, int depth)
+{
+  if (depth > 2) return;
+
+  // start to split pte and print
+  for (int i = 0; i <= depth; i++)
+  {
+    printf(" ..");
+  }
+
+  printf("%d: pte %p pa ", index, pte);
+
+  // extract physical address and print
+  uint64 *pa = (uint64 *)((pte >> 10) << 12); // truncate offset and flag
+  printf("%p\n", pa);
+
+  // recursively vmprintpte
+  depth++;
+  for (int i = 0; i < 512; i++)
+  {
+    if ((pa[i] & PTE_V))
+      vmprintpte(pa[i], i, depth);
+  }
+  
+  return;
+}
+
+// print pagetable
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+
+  int depth = 0;
+  for (int i = 0; i < 512; i++)
+  {
+    if ((pagetable[i] & PTE_V))
+      vmprintpte(pagetable[i], i, depth);
+  }
+  
+  return;
+}

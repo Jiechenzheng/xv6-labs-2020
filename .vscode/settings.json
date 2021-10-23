@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "memlayout.h": "c",
+        "riscv.h": "c"
+    },
+    "window.zoomLevel": 1,
+}

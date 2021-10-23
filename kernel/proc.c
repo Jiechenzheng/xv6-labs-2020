@@ -135,6 +135,10 @@ found:
     return 0;
   }
 
+  // // set pid value to USYSCALL struct
+  // struct usyscall *u = (struct usyscall *)USYSCALL;
+  // u->pid = p->pid;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -153,6 +157,7 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  kfree((void*)walkaddr(p->pagetable, USYSCALL));
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -196,6 +201,24 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  // create a page for USYSCALL and map between virtual and physical space
+  // TODO: maybe not need to create a new physical page each time. 
+  // The location of TRAMPOLINE and USYSCALL should be fixed.
+  // So it should be each process's pagetable has each own mapping between a fixed TRAMPOLINE and the physical page.
+  // but then if each process shares the same TRAMPOLINE value?
+  // So I might need to know about how trampoline workd firstly.
+  // Or how the address of p->trampoline at least.
+  uint64 mem = (uint64)kalloc();
+  if(mem == 0){
+    return 0;
+  }
+  else{
+    if(mappages(pagetable, USYSCALL, PGSIZE,
+                mem, PTE_R | PTE_W) < 0) {
+      return 0;
+    }
+  }
+
   return pagetable;
 }
 
@@ -206,6 +229,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  uvmunmap(pagetable, USYSCALL, 1, 0);
   uvmfree(pagetable, sz);
 }
 
