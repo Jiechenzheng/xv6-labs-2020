@@ -50,6 +50,7 @@ copyinstr_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   
   stats.ncopyinstr++;   // XXX lock
   for(int i = 0; i < max && srcva + i < p->sz; i++){
+    // printf(">>> Log: value of dst[i] is %s\n", dst[i]);
     dst[i] = s[i];
     if(s[i] == '\0')
       return 0;

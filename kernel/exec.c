@@ -18,7 +18,7 @@ exec(char *path, char **argv)
   struct elfhdr elf;
   struct inode *ip;
   struct proghdr ph;
-  pagetable_t pagetable = 0, oldpagetable;
+  pagetable_t pagetable = 0, oldpagetable, kpagetable = 0;
   struct proc *p = myproc();
 
   begin_op();
@@ -36,6 +36,9 @@ exec(char *path, char **argv)
     goto bad;
 
   if((pagetable = proc_pagetable(p)) == 0)
+    goto bad;
+
+  if((kpagetable = proc_kpagetable(p)) == 0)
     goto bad;
 
   // Load program into memory.
@@ -111,16 +114,28 @@ exec(char *path, char **argv)
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
+  p->kpagetable = kpagetable;
   p->sz = sz;
   p->trapframe->epc = elf.entry;  // initial program counter = main
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
+
+  // copy user pagetable to kernel pagetable
+  if(kernelusermapping(p->kpagetable, p->pagetable, 0, p->sz) != 0)
+    goto bad;
+
+  w_satp(MAKE_SATP(p->kpagetable));
+  sfence_vma();
+
+  if(p->pid==1) vmprint(p->pagetable);
 
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
   if(pagetable)
     proc_freepagetable(pagetable, sz);
+  if(kpagetable)
+    proc_freekpagetable(p);
   if(ip){
     iunlockput(ip);
     end_op();
