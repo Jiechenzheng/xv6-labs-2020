@@ -122,6 +122,7 @@ panic(char *s)
   printf(s);
   printf("\n");
   panicked = 1; // freeze uart output from other CPUs
+  backtrace();
   for(;;)
     ;
 }
@@ -131,4 +132,23 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+void backtrace(void)
+{
+  // r_fp() read current frame pointer, this can be gained from frame pointer (stored in s0) of current stack
+  // get the current frame pointer
+  uint64 fp = r_fp();
+  uint64 fptmp = fp;
+  uint64 uppage = PGROUNDUP(fp);
+  uint64 downpage = PGROUNDDOWN(fp);
+
+  printf("backtrace:\n");
+
+  // walk up the stack through frame pointers and print the saved return address
+  while (fptmp < uppage && fptmp > downpage){
+    // pf is address, must do some conversion
+    printf("%p\n",*((uint64*)fptmp - 1));
+    fptmp = *((uint64*)fptmp - 2);
+  }
 }
