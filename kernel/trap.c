@@ -77,8 +77,19 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2){
+    p->tickspassed++;
+    if(p->tickspassed >= p->alarmintvl){
+      // copy all the saved register of proc before function handler
+      if(!p->isalarmworking){
+        p->alarmtrapframe = *(p->trapframe);
+        p->tickspassed = 0;
+        p->trapframe->epc = p->funhandler;
+        p->isalarmworking = 1;
+      }
+    }
     yield();
+  }
 
   usertrapret();
 }
