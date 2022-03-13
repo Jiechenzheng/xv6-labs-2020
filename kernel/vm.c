@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -96,15 +98,29 @@ walkaddr(pagetable_t pagetable, uint64 va)
 {
   pte_t *pte;
   uint64 pa;
+  // struct proc *p = myproc();
 
   if(va >= MAXVA)
     return 0;
 
   pte = walk(pagetable, va, 0);
-  if(pte == 0)
-    return 0;
-  if((*pte & PTE_V) == 0)
-    return 0;
+  if(pte == 0 || (*pte & PTE_V) == 0){
+    struct proc *p = myproc();
+    if (va >= p->sz || va < PGROUNDUP(p->trapframe->sp)) return 0;
+
+    // va has already PGROUNDDOWN before passing here
+    pa = (uint64)kalloc();
+    if(pa == 0){
+      return 0;
+    }
+
+    memset((uint64*)pa, 0, PGSIZE);
+    if(mappages(p->pagetable, va, PGSIZE, pa, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+      kfree((uint64*)pa);
+      return 0;
+    }
+    return pa;
+  }
   if((*pte & PTE_U) == 0)
     return 0;
   pa = PTE2PA(*pte);
@@ -181,9 +197,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+      continue;
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -315,9 +331,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -439,4 +455,46 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+void
+vmprintpte(pte_t pte, int index, int depth)
+{
+  if (depth > 2) return;
+
+  // start to split pte and print
+  for (int i = 0; i <= depth; i++)
+  {
+    printf(" ..");
+  }
+
+  printf("%d: pte %p pa ", index, pte);
+
+  // extract physical address and print
+  uint64 *pa = (uint64 *)((pte >> 10) << 12); // truncate offset and flag
+  printf("%p\n", pa);
+
+  // recursively vmprintpte
+  depth++;
+  for (int i = 0; i < 512; i++)
+  {
+    if ((pa[i] & PTE_V))
+      vmprintpte(pa[i], i, depth);
+  }
+  return;
+}
+
+// print pagetable
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+
+  int depth = 0;
+  for (int i = 0; i < 512; i++)
+  {
+    if ((pagetable[i] & PTE_V))
+      vmprintpte(pagetable[i], i, depth);
+  }
+  return;
 }

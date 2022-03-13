@@ -67,6 +67,31 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15){
+    // allocate one page and map one page
+    if(r_stval() < p->sz && r_stval() > PGROUNDDOWN(p->trapframe->sp)){
+      char *mem;
+      mem = kalloc();
+      // cannot be allocated (out-of-memory) so kill this process
+      if(mem == 0){
+        p->killed = 1;
+        exit(-1);
+      }
+      
+      memset(mem, 0, PGSIZE);
+      uint64 pg_down = PGROUNDDOWN(r_stval());
+      
+      if(mappages(p->pagetable, pg_down, PGSIZE, (uint64)mem, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+        kfree(mem);
+        p->killed = 1;
+        exit(-1);
+      }
+    }
+    else {
+      p->killed = 1;
+      printf("virtual address larger than process size or smaller than stack\n");
+      exit(-1);
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

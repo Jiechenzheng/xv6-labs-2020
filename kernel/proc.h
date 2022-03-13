@@ -103,4 +103,8 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  // mark of the process stack size
+  uint64 utpstack;              // virtual address of the top of user stack
+  int countpagefault;           // count the page fault times.
 };
