@@ -11,6 +11,8 @@ uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
+extern volatile int cow_refcnt[];
+
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
@@ -67,6 +69,28 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15){
+    uint64 va = r_stval();
+    uint64 va_guard_top = PGROUNDDOWN(p->trapframe->sp);
+    uint64 va_guard_bottom = PGROUNDDOWN(p->trapframe->sp) - PGSIZE;
+
+    if((va < p->sz) && (va >= va_guard_top || va < va_guard_bottom)){
+      uint64 va_down = PGROUNDDOWN(va);
+      uint64 pa_down = cowalloc(p->pagetable, va_down);
+      if(pa_down == 0){
+        p->killed = 1;
+      }
+    }
+    else if(va >= p->sz) {
+      p->killed = 1;
+      printf("trap.c: virtual address %p larger than process size %p\n", va, p->sz);
+      exit(-1);
+    }
+    else if(va < va_guard_top && va >= va_guard_bottom) {
+      p->killed = 1;
+      printf("trap.c: virtual address %p is within stack guard\n", va);
+      exit(-1);
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
