@@ -16,6 +16,7 @@ struct entry {
 struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
+pthread_mutex_t lock[NBUCKET];
 
 double
 now()
@@ -40,6 +41,7 @@ void put(int key, int value)
 {
   int i = key % NBUCKET;
 
+  pthread_mutex_lock(&lock[i]);
   // is the key already present?
   struct entry *e = 0;
   for (e = table[i]; e != 0; e = e->next) {
@@ -53,6 +55,7 @@ void put(int key, int value)
     // the new is new.
     insert(key, value, &table[i], table[i]);
   }
+  pthread_mutex_unlock(&lock[i]);
 }
 
 static struct entry*
@@ -103,6 +106,10 @@ main(int argc, char *argv[])
   void *value;
   double t1, t0;
 
+  for(int i = 0; i < NBUCKET; i++){
+    pthread_mutex_init(&lock[i], NULL);
+  }
+
   if (argc < 2) {
     fprintf(stderr, "Usage: %s nthreads\n", argv[0]);
     exit(-1);
@@ -119,8 +126,8 @@ main(int argc, char *argv[])
   // first the puts
   //
   t0 = now();
-  for(int i = 0; i < nthread; i++) {
-    assert(pthread_create(&tha[i], NULL, put_thread, (void *) (long) i) == 0);
+  for(int i = 0; i < nthread; i++) {  // Thread in user space, whether indeed parallel depends on how cores handle it.
+    assert(pthread_create(&tha[i], NULL, put_thread, (void *) (long) i) == 0);  // would use schedule inside to jump between functions.
   }
   for(int i = 0; i < nthread; i++) {
     assert(pthread_join(tha[i], &value) == 0);
