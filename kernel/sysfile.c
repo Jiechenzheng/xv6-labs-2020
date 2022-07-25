@@ -244,12 +244,12 @@ create(char *path, short type, short major, short minor)
   struct inode *ip, *dp;
   char name[DIRSIZ];
 
-  if((dp = nameiparent(path, name)) == 0)
+  if((dp = nameiparent(path, name)) == 0) // parent directory does not exist
     return 0;
 
   ilock(dp);
 
-  if((ip = dirlookup(dp, name, 0)) != 0){
+  if((ip = dirlookup(dp, name, 0)) != 0){ // if found, return
     iunlockput(dp);
     ilock(ip);
     if(type == T_FILE && (ip->type == T_FILE || ip->type == T_DEVICE))
@@ -258,7 +258,7 @@ create(char *path, short type, short major, short minor)
     return 0;
   }
 
-  if((ip = ialloc(dp->dev, type)) == 0)
+  if((ip = ialloc(dp->dev, type)) == 0) // alloc and set
     panic("create: ialloc");
 
   ilock(ip);
@@ -281,6 +281,39 @@ create(char *path, short type, short major, short minor)
   iunlockput(dp);
 
   return ip;
+}
+
+static struct inode*
+getsymlinkip(struct inode* ip, int n){
+  struct inode* nip;
+  char path[MAXPATH];
+
+  n++;
+  if(n >= 11){
+    iunlockput(ip);
+    return 0;
+  }
+
+  if(readi(ip, 0, (uint64)path, 0, MAXPATH) <= 0){
+    iunlockput(ip);
+    return 0;
+  }
+
+  iunlockput(ip);
+
+  if((nip = namei(path)) == 0){
+    return 0;
+  }
+
+  ilock(nip);
+
+  if(nip->type != T_SYMLINK){
+    return nip;
+  }
+  else
+  {
+    return getsymlinkip(nip, n);
+  }
 }
 
 uint64
@@ -321,6 +354,17 @@ sys_open(void)
     end_op();
     return -1;
   }
+
+
+  // when symbolic file
+  if(ip->type == T_SYMLINK && (omode & O_NOFOLLOW) == 0)  // follow the link
+  {
+    if((ip = getsymlinkip(ip, 0)) == 0){
+      end_op();
+      return -1;
+    }
+  }
+
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
@@ -482,5 +526,36 @@ sys_pipe(void)
     fileclose(wf);
     return -1;
   }
+  return 0;
+}
+
+uint64
+sys_symlink(void)
+{
+  char new[MAXPATH], old[MAXPATH];
+  struct inode *ip;
+
+  if(argstr(0, old, MAXPATH) < 0 || argstr(1, new, MAXPATH) < 0)
+    return -1;
+
+  begin_op();
+
+  ip = create(new, T_SYMLINK, 0, 0);
+
+  // if new exist, error
+  if(ip == 0)
+  {
+    end_op();
+    return -1;
+  }
+
+  if(writei(ip, 0, (uint64)old, 0, MAXPATH) <= 0){
+    end_op();
+    return -1;
+  }
+
+  iunlockput(ip);
+  end_op();
+
   return 0;
 }

@@ -365,6 +365,25 @@ iunlockput(struct inode *ip)
   iput(ip);
 }
 
+// get block number of nth block from a given address
+static uint
+bgetblockno(struct inode *ip, uint addr, int n)
+{
+  struct buf *bp;
+  uint* a;
+  uint blockno;
+
+  bp = bread(ip->dev, addr);
+  a = (uint*)bp->data;
+  if((blockno = a[n]) == 0){
+    a[n] = blockno = balloc(ip->dev);
+    log_write(bp);
+  }
+  brelse(bp);
+
+  return blockno;
+}
+
 // Inode content
 //
 // The content (data) associated with each inode is stored
@@ -379,6 +398,9 @@ bmap(struct inode *ip, uint bn)
 {
   uint addr, *a;
   struct buf *bp;
+  int n, naddr;
+
+  naddr = BSIZE/sizeof(uint);
 
   if(bn < NDIRECT){
     if((addr = ip->addrs[bn]) == 0)
@@ -387,10 +409,10 @@ bmap(struct inode *ip, uint bn)
   }
   bn -= NDIRECT;
 
-  if(bn < NINDIRECT){
-    // Load indirect block, allocating if necessary.
+  if(bn < NSGINDIRECT){
+    // Load single-indirect block, allocating if necessary.
     if((addr = ip->addrs[NDIRECT]) == 0)
-      ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+      ip->addrs[NDIRECT] = addr = balloc(ip->dev);  // set bitmap
     bp = bread(ip->dev, addr);
     a = (uint*)bp->data;
     if((addr = a[bn]) == 0){
@@ -398,6 +420,23 @@ bmap(struct inode *ip, uint bn)
       log_write(bp);
     }
     brelse(bp);
+    return addr;
+  }
+  bn -=NSGINDIRECT;
+
+  if(bn < NDBINDIRECT){
+    // Load inode addrs, allocating if necessary.
+    if((addr = ip->addrs[NDIRECT+1]) == 0)
+      ip->addrs[NDIRECT+1] = addr = balloc(ip->dev);
+
+    // Load double-indirect block, allocating if necessary.
+    n = bn/naddr;
+    addr = bgetblockno(ip, addr, n);
+
+    // Load single-indirect block, allocating if necessary.
+    n = bn%naddr;
+    addr = bgetblockno(ip, addr, n);
+
     return addr;
   }
 
@@ -410,8 +449,9 @@ void
 itrunc(struct inode *ip)
 {
   int i, j;
-  struct buf *bp;
-  uint *a;
+  struct buf *bp, *dbp, *sbp;
+  uint *a, *da, *sa;
+  uint daddr, saddr;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
@@ -423,13 +463,36 @@ itrunc(struct inode *ip)
   if(ip->addrs[NDIRECT]){
     bp = bread(ip->dev, ip->addrs[NDIRECT]);
     a = (uint*)bp->data;
-    for(j = 0; j < NINDIRECT; j++){
+    for(j = 0; j < NSGINDIRECT; j++){
       if(a[j])
         bfree(ip->dev, a[j]);
     }
     brelse(bp);
     bfree(ip->dev, ip->addrs[NDIRECT]);
     ip->addrs[NDIRECT] = 0;
+  }
+
+  if(ip->addrs[NDIRECT+1]){
+    daddr = ip->addrs[NDIRECT+1];
+    dbp = bread(ip->dev, daddr);
+    da = (uint*)dbp->data;
+    for(i = 0; i < NSGINDIRECT; i++){
+      if(da[i]){
+        saddr = da[i];
+        sbp = bread(ip->dev, saddr);
+        sa = (uint*)sbp->data;
+        for(j = 0; j < NSGINDIRECT; j++){
+          if(sa[j]){
+            bfree(ip->dev, sa[j]);  // free data block
+          }
+        }
+        brelse(sbp);
+        bfree(ip->dev, saddr);  // free the single-indirect block
+      }
+    }
+    brelse(dbp);
+    bfree(ip->dev, daddr);
+    ip->addrs[NDIRECT+1] = 0;
   }
 
   ip->size = 0;
