@@ -5,6 +5,11 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "fcntl.h"
 
 /*
  * the kernel's page table.
@@ -170,9 +175,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
-      panic("uvmunmap: walk");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+      continue;
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -304,9 +309,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
-      panic("uvmcopy: pte should exist");
+      continue;
     if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+      continue;
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)
@@ -428,4 +433,109 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+uint64
+mmap(uint64 addr, int length, int prot, int flag, int fd, int offset)
+{
+  // fill in the page table lazily, without actually allocate physical memory
+  struct proc *p;
+  struct vma *v = 0;
+  struct file *f;
+
+  p = myproc();
+
+  // mmap doesn't allo read/write mapping in MAP_SHARED of a file opened read-only
+  f = p->ofile[fd];
+  if((f->writable == 0) && (flag & MAP_SHARED) && (prot & PROT_WRITE)){
+    return -1;
+  }
+  addr = p->sz; // sz equals to nth byte, equals to addr
+  p->sz += length;  // one byte per character
+
+  for (int i = 0; i < NVMA; i++)
+  {
+    if(p->vmas[i].addr == 0){
+      v = &(p->vmas[i]);
+      break;
+    }
+  }
+
+  v->addr = addr;
+  v->length = length;
+  v->prot = prot;
+  v->flag = flag;
+  v->fd = fd;
+  v->f = p->ofile[fd]; // get the pointer to struct file by fd index
+
+  filedup(v->f); // increase the ref for file, in case file disappear due to other close
+
+  return addr;
+}
+
+uint64
+munmap(uint64 addr, int length)
+{
+  struct proc *p;
+  struct vma *v = 0;
+
+  p = myproc();
+
+  printf("Log: munmap: find the corresponding vma\n");
+  for (int i = 0; i < NVMA; i++)
+  {
+    if (addr >= p->vmas[i].addr && addr < (p->vmas[i].addr + p->vmas[i].length)){
+      v = &(p->vmas[i]);
+      break;
+    }
+  }
+
+  if(!v){
+    printf("Log: munmap: not find corresponding vma\n");
+    return -1;
+  }
+
+  // assume addr is page-aligned
+  printf("Log: munmap: unmap\n");
+  if((addr % PGSIZE) != 0)
+    panic("munmap: not aligned");
+
+  uint64 a;
+  pte_t *pte;
+
+  for(a = addr; a < addr + length; a += PGSIZE){
+    if((pte = walk(p->pagetable, a, 0)) == 0)  // lazy allocation
+      continue;
+    if((*pte & PTE_V) == 0)
+      continue;
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("munmap: not a leaf");
+    // if map_shared, write back all the contents whenever dirty of not(it is a limit of this code)
+    if(v->flag == MAP_SHARED){
+      if(a + PGSIZE > addr + length){
+        filewrite(v->f, a, (addr+length)-a);
+      }
+      else{
+        filewrite(v->f, a, PGSIZE);
+      }
+    }
+    // do free
+    uint64 pa = PTE2PA(*pte);
+    kfree((void*)pa);
+    *pte = 0;
+  }
+  // uvmunmap(p->pagetable, addr, length/PGSIZE, 1);
+
+  // if munmap the whole file, then decrease file ref, and clear the vma
+  if(length == v->length){
+    fileclose(v->f);
+    v->addr = 0;
+    v->f = 0;
+    v->fd = -1;
+    v->flag = 0;
+    v->length = 0;
+    v->prot = 0;
+  }
+
+  return 0;
 }

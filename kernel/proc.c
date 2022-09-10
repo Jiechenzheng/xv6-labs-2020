@@ -134,6 +134,17 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // allocate vmas
+  for (int i = 0; i < NVMA; i++)
+  {
+    p->vmas[i].addr = 0;
+    p->vmas[i].f = 0;
+    p->vmas[i].fd = -1;
+    p->vmas[i].flag = 0;
+    p->vmas[i].length = 0;
+    p->vmas[i].prot = 0;
+  }
+
   return p;
 }
 
@@ -157,6 +168,17 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  // Shall we free contents in all vmas?
+  for (int i = 0; i < NVMA; i++)
+  {
+    p->vmas[i].addr = 0;
+    p->vmas[i].f = 0;
+    p->vmas[i].fd = -1;
+    p->vmas[i].flag = 0;
+    p->vmas[i].length = 0;
+    p->vmas[i].prot = 0;
+  }
+
 }
 
 // Create a user page table for a given process,
@@ -274,6 +296,15 @@ fork(void)
     return -1;
   }
 
+  // Copy vmas from parent to child.
+  for (int i = 0; i < NVMA; i++)
+  {
+    if(p->vmas[i].addr){
+      np->vmas[i] = p->vmas[i];
+      filedup(p->vmas[i].f);
+    }
+  }
+
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -357,6 +388,17 @@ exit(int status)
   iput(p->cwd);
   end_op();
   p->cwd = 0;
+
+  // munmap all the vmas
+  struct vma *v = 0;
+  for (int i = 0; i < NVMA; i++)
+  {
+    v = &(p->vmas[i]);
+    if(v->addr){
+      if((munmap(v->addr, v->length)) < 0)
+        panic("exit: munmap");
+    }
+  }
 
   // we might re-parent a child to init. we can't be precise about
   // waking up init, since we can't acquire its lock once we've

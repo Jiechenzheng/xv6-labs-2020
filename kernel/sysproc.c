@@ -95,3 +95,46 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// for user space map file to the virtual address
+uint64
+sys_mmap(void)
+{
+  uint64 addr;
+  int lth, offset;
+  int prot, flag, fd;
+
+  if(argaddr(0, &addr) < 0)
+    return -1;
+  if(argint(1, &lth) < 0)
+    return -1;
+  if(argint(2, &prot)< 0)
+    return -1;
+  if(argint(3, &flag) < 0)
+    return -1;
+  if(argint(4, &fd) < 0)
+    return -1;
+  if(argint(5, &offset) < 0)
+    return -1;
+
+  addr = mmap(addr, lth, prot, flag, fd, offset);
+  return addr;
+}
+
+// for user space unmap the virtual address
+uint64
+sys_munmap(void)
+{
+  uint64 addr;
+  int lth;
+
+  if(argaddr(0, &addr) < 0)
+    return -1;
+  if(argint(1, &lth) < 0)
+    return -1;
+
+  if(munmap(addr, lth) < 0)
+    return -1;
+
+  return 0;
+}

@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -67,6 +71,75 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15){
+    if(r_stval() < p->sz && r_stval() > PGROUNDDOWN(p->trapframe->sp)){
+      // allocate one physical page
+      printf("Log: allocate one physical page\n");
+      char *mem;
+      struct vma *v = 0;
+      int r;
+      int flag = 0;
+      uint64 addr = r_stval();
+
+      mem = kalloc();
+      // cannot be allocated (out-of-memory) so kill this process
+      if(mem == 0){
+        p->killed = 1;
+        exit(-1);
+      }
+      memset(mem, 0, PGSIZE);
+
+      // find the corresponding one vma
+      printf("Log: find the corresponding vma\n");
+      for (int i = 0; i < NVMA; i++)
+      {
+        if (addr >= p->vmas[i].addr && addr < (p->vmas[i].addr + p->vmas[i].length)){
+          v = &(p->vmas[i]);
+          break;
+        }
+      }
+
+      // read 4096 bytes from inode to the new allocated page
+      // just read from beginning in this lab
+      printf("Log: read inode\n");
+      if(v){
+        ilock(v->f->ip);
+        if((r = readi(v->f->ip, 0, (uint64)mem, addr-v->addr, PGSIZE)) < 0){
+          printf("Read nothing\n");
+          iunlock(v->f->ip);
+        }
+        iunlock(v->f->ip);
+      }
+      else{
+        printf("Log: did not find corresponding vma\n");
+        kfree(mem);
+        p->killed = 1;
+        exit(-1);
+      }
+
+      // map page to user virtual address
+      printf("Log: map page to user virtual address %d\n", addr);
+      if(v->prot & PROT_READ){
+        flag |= PTE_R;
+      }
+      if(v->prot & PROT_WRITE){
+        flag |= PTE_W;
+      }
+      if(v->prot & PROT_EXEC){
+        flag |= PTE_X;
+      }
+      if(mappages(p->pagetable, addr, PGSIZE, (uint64)mem, flag | PTE_U) != 0){
+        kfree(mem);
+        p->killed = 1;
+        exit(-1);
+      }
+    }
+    else {
+      p->killed = 1;
+      printf("Log: virtual address larger than process size or smaller than stack\n");
+      exit(-1);
+    }
+    printf("Log: complete page fault\n");
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
