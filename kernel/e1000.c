@@ -95,26 +95,74 @@ e1000_init(uint32 *xregs)
 int
 e1000_transmit(struct mbuf *m)
 {
-  //
-  // Your code here.
-  //
   // the mbuf contains an ethernet frame; program it into
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after sending.
-  //
+  acquire(&e1000_lock);
+  int pIndex = regs[E1000_TDT] % TX_RING_SIZE;
+  struct tx_desc* desc = &(tx_ring[pIndex]);
+
+  // if E1000_TXD_STAT_DD is not set, meaning previous packet still exists
+  if ((desc->status & E1000_TXD_STAT_DD) == 0)
+  {
+    printf("Log: E1000 has not finish the previous transmit\n");
+    release(&e1000_lock);
+    return -1;
+  }
   
+  // free the previous buffer
+  if(tx_mbufs[pIndex]){
+    mbuffree(tx_mbufs[pIndex]);
+  }
+  
+  // fill in the descriptor
+  desc->addr = (uint64)m->head;
+  desc->length = m->len;
+  desc->cmd = E1000_TXD_CMD_EOP | E1000_TXD_CMD_RS;
+  desc->status = 0;
+
+  // stash away a pointer to the mbuf for the later freeing
+  regs[E1000_TDT] = (regs[E1000_TDT] + 1)%TX_RING_SIZE;
+
+  release(&e1000_lock);
+
   return 0;
 }
 
 static void
 e1000_recv(void)
 {
-  //
-  // Your code here.
-  //
   // Check for packets that have arrived from the e1000
   // Create and deliver an mbuf for each packet (using net_rx()).
-  //
+  int count = 0;
+  while (1)
+  {
+    count++;
+    int pIndex = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+    struct rx_desc* desc = &(rx_ring[pIndex]);
+
+    if((desc->status & E1000_RXD_STAT_DD) == 0){
+      return;
+    }
+
+    struct mbuf *m = rx_mbufs[pIndex];
+    m->len = desc->length;  // m->head has already been in descriptor
+    net_rx(m);
+
+    // allocate a new mbuf
+    rx_mbufs[pIndex] = mbufalloc(0);
+    if (!rx_mbufs[pIndex])
+      panic("e1000");
+    desc->addr = (uint64) rx_mbufs[pIndex]->head;
+    desc->status = 0;
+    regs[E1000_RDT] = (regs[E1000_RDT] + 1) % RX_RING_SIZE;
+
+    if(count >= RX_RING_SIZE){
+      printf("Log: packets larger than maximum RX_RING_SIZE\n");
+      release(&e1000_lock);
+      exit(-1);
+    }
+  }
 }
 
 void
